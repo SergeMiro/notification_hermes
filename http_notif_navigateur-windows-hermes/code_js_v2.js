@@ -4,20 +4,20 @@
 
 // Добавляем обработчик сообщений для верхнего окна для фокусировки
 if (window === window.top) {
-	window.addEventListener('message', function (event) {
+	window.top.addEventListener('message', function (event) {
 		if (event.data === 'FOCUS_WINDOW') {
 			try {
 				// Пытаемся сфокусировать и развернуть окно
 				window.focus();
 
 				// Разворачиваем окно, если оно минимизировано
-				if (window.outerWidth <= 1 || window.outerHeight <= 1) {
-					window.resizeTo(1024, 768); // Разумный размер по умолчанию
+				if (window.top.outerWidth <= 1 || window.top.outerHeight <= 1) {
+					window.top.resizeTo(1024, 768); // Разумный размер по умолчанию
 				}
 
 				// Дополнительная агрессивная фокусировка
 				setTimeout(() => {
-					window.focus();
+					window.top.focus();
 				}, 100);
 			} catch (error) {
 				console.error('Ошибка при попытке активировать окно через postMessage:', error);
@@ -360,10 +360,6 @@ function appendNotifHtml() {
 	</div>
 	`);
 };
-
-
-
-
 
 
 
