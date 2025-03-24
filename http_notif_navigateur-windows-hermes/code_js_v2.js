@@ -386,7 +386,7 @@ function showPopup(callId, telClient, campagne) {
 
 // Функция для создания нативного уведомления Windows
 function createWindowsNotification(callId, telClient, campagne) {
-	const iconUrl = 'http://192.168.9.237/hermes_net_v5/InterfaceDesigner/upload/dAlKTsEK/img/icon-incall.png';
+	const iconUrl = 'https://images.centrerelationsclients.com/Clochette/Notif_Entrant/icon-incall.png';
 	const title = `Appel entrant Hèrmes, campagne : "${campagne}"`;
 	const options = {
 		body: `${telClient} vous appelle.`,
@@ -537,7 +537,7 @@ function showMissedCallNotification(callId, telClient, campagne) {
 		return;
 	}
 
-	const iconUrl = 'http://192.168.9.237/hermes_net_v5/InterfaceDesigner/upload/dAlKTsEK/img/icon-call-rejected.png';
+	const iconUrl = 'https://images.centrerelationsclients.com/Clochette/Notif_Entrant/icon-call-reejected.png';
 	const title = `Appel manqué - campagne : "${campagne}"`;
 	const options = {
 		body: `${telClient} a essayé de vous joindre.`,
