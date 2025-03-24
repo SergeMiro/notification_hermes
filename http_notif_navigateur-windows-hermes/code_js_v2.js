@@ -36,6 +36,7 @@ $queuesType = "Queues";	// "Queues" - Campagnes entrants | "QueuesOutbound" - so
 $view_notif = "Fimainfo_NotificationHermes_Clochette";
 $cloud_1 = "192.168.9.236"
 $cloud_2 = "192.168.9.237"
+$cloud_4 = "c4-web.fimainfo.fr"
 
 // для JS :
 $inCallsCounter = 0;
@@ -249,13 +250,17 @@ async function validateAndCreateView() {
 // Fonction pour charger le fichier CSS personnalisé dans DOM de Hermes.net (Workspace) 
 function loadCssFileInWorkspace(filename) {
 	var link = window.top.document.createElement('link');
-	// Ajoutons un paramètre dans l'url pour eviter le cache
 	var timestamp = new Date().getTime();
-	link.href = 'http://192.168.9.237/hermes_net_v5/PlateformPublication/Frameset_Includes/styles/' + filename + '?v=Sergiy=' + timestamp;
+	link.href = `https://${$cloud_4}/hermes_net_v5/PlateformPublication/Frameset_Includes/styles/${filename}?v=${timestamp}`;
+	console.warn("CSS File URL:", link.href);
 	link.type = 'text/css';
 	link.rel = 'stylesheet';
+	link.setAttribute('cache-control', 'no-cache, no-store, must-revalidate');
+	link.setAttribute('pragma', 'no-cache');
+	link.setAttribute('expires', '0');
 	window.top.document.head.appendChild(link);
 }
+
 
 // Fonction qui vérifie les campagnes associées à l'agent
 function checkCampaigns(typeCampagne) {
@@ -424,6 +429,7 @@ function createWindowsNotification(callId, telClient, campagne) {
 
 			// Пробуем подрезать окно через небольшую задержку (помогает в некоторых браузерах)
 			setTimeout(() => {
+
 				topWindow.focus();
 
 				// В некоторых случаях может помочь изменение размера окна
@@ -751,3 +757,4 @@ function affichePopupContainer(isVisible) {
 		popupContainer.style.display = isVisible ? 'block' : 'none';
 	}
 }
+
