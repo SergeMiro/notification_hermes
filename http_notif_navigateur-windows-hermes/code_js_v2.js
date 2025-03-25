@@ -388,28 +388,6 @@ function appendNotifHtml() {
 
 
 
-// Fonction для создания нативного уведомления Windows
-function showPopup(callId, telClient, campagne) {
-	// Проверяем поддержку уведомлений браузером
-	if (!("Notification" in window.top)) {
-		console.error("Этот браузер не поддерживает уведомления рабочего стола");
-		return;
-	}
-
-	// Проверяем разрешение на отправку уведомлений
-	if (window.top.Notification.permission === "granted") {
-		// Если разрешено, создаем уведомление
-		createWindowsNotification(callId, telClient, campagne);
-	} else if (window.top.Notification.permission !== "denied") {
-		// Если разрешение еще не запрашивалось, запрашиваем его
-		window.top.Notification.requestPermission().then(permission => {
-			if (permission === "granted") {
-				createWindowsNotification(callId, telClient, campagne);
-			}
-		});
-	}
-}
-
 // Функция для создания нативного уведомления Windows
 function createWindowsNotification(callId, telClient, campagne) {
 	const iconUrl = 'https://images.centrerelationsclients.com/Clochette/Notif_Entrant/icon-incall.png';
@@ -422,69 +400,54 @@ function createWindowsNotification(callId, telClient, campagne) {
 		silent: true // Отключаем стандартный звук уведомления, так как у нас есть свой
 	};
 
-	// Создаем уведомление
-	const notification = new window.top.Notification(title, options);
+	// Создаем уведомление без window.top
+	const notification = new Notification(title, options);
 
 	// Добавляем обработчик закрытия для логирования
 	notification.onclose = function () {
 		console.warn(`Уведомление о звонке ${callId} было закрыто. Это могло произойти из-за явного закрытия или автоматически.`);
 	};
 
-	// Обработчик клика на уведомление
+	// Упрощенный обработчик клика на уведомление
 	notification.onclick = function () {
 		// Отмечаем, что на уведомление кликнули
 		if ($displayedNotifications[callId]) {
 			$displayedNotifications[callId].clicked = true;
 		}
 
-		// Сохраняем ссылку на окно верхнего уровня
-		const topWindow = window.top;
-
 		// Закрываем уведомление
 		this.close();
 		console.log(`Уведомление о звонке ${callId} закрыто после клика пользователя.`);
 
-		// Хак для Chrome: запускаем мигание заголовка
-		if (typeof topWindow.requestAttention === 'function') {
-			topWindow.requestAttention(15); // 15 циклов мигания заголовка
-		}
-
-		// Пытаемся активировать окно более агрессивно
 		try {
-			// Фокусируем окно
-			topWindow.focus();
+			// Сначала воспроизводим звук - часто помогает активировать окно
+			const activationSound = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==");
+			activationSound.play().catch(e => { });
 
-			// Если в браузере есть метод requestAttention, используем его (Firefox)
-			if (typeof topWindow.navigator.requestAttention === 'function') {
-				topWindow.navigator.requestAttention();
+			// Фокусировка без перезагрузки страницы
+			window.focus();
+
+			// Более агрессивные методы фокусировки без перезагрузки
+			if (window.parent) {
+				window.parent.focus();
 			}
 
-			// Пробуем подрезать окно через небольшую задержку (помогает в некоторых браузерах)
-			setTimeout(() => {
-
-				topWindow.focus();
-
-				// В некоторых случаях может помочь изменение размера окна
-				const currentWidth = topWindow.outerWidth;
-				const currentHeight = topWindow.outerHeight;
-
-				// Слегка меняем размер окна и возвращаем обратно
-				topWindow.resizeTo(currentWidth + 1, currentHeight + 1);
-				setTimeout(() => {
-					topWindow.resizeTo(currentWidth, currentHeight);
-					topWindow.focus();
-				}, 10);
-			}, 100);
-
-			// Если есть доступ к родительскому окну через postMessage
-			if (window !== topWindow) {
-				topWindow.postMessage('FOCUS_WINDOW', '*');
+			// Для Chrome - попытка фокусировки через API браузера без перезагрузки
+			if (window.chrome && window.chrome.windows) {
+				window.chrome.windows.getCurrent(function (win) {
+					window.chrome.windows.update(win.id, { focused: true, state: 'normal' });
+				});
 			}
+
+			// Для IE/Edge
+			if (window.external && typeof window.external.msIsSiteMode === 'function') {
+				window.external.msSiteModeActivate();
+			}
+
+			console.log('Пользователь нажал на уведомление о звонке: ' + callId);
 		} catch (error) {
 			console.error('Ошибка при попытке активировать окно:', error);
 		}
-
-		console.log('Пользователь нажал на уведомление о звонке: ' + callId);
 	};
 
 	// Сохраняем ссылку на уведомление с дополнительными данными
@@ -710,6 +673,35 @@ function initializePopupContainer() {
 function affichePopupContainer(isVisible) {
 	if (popupContainer) {
 		popupContainer.style.display = isVisible ? 'block' : 'none';
+	}
+}
+
+// Affichez le container des popup
+function affichePopupContainer(isVisible) {
+	if (popupContainer) {
+		popupContainer.style.display = isVisible ? 'block' : 'none';
+	}
+}
+
+// Fonction для создания нативного уведомления Windows
+function showPopup(callId, telClient, campagne) {
+	// Проверяем поддержку уведомлений браузером
+	if (!("Notification" in window)) {
+		console.error("Этот браузер не поддерживает уведомления рабочего стола");
+		return;
+	}
+
+	// Проверяем разрешение на отправку уведомлений
+	if (Notification.permission === "granted") {
+		// Если разрешено, создаем уведомление
+		createWindowsNotification(callId, telClient, campagne);
+	} else if (Notification.permission !== "denied") {
+		// Если разрешение еще не запрашивалось, запрашиваем его
+		Notification.requestPermission().then(permission => {
+			if (permission === "granted") {
+				createWindowsNotification(callId, telClient, campagne);
+			}
+		});
 	}
 }
 
