@@ -48,6 +48,11 @@ $idsAgentCampaigns = [];
 $dataNotif = [];
 $inCallsAnswered = [];
 
+// Массивы для отслеживания обработанных звонков
+$processedCallIds = []; // Массив для хранения Id звонков, которые уже были обработаны
+$currentCallData = []; // Текущие данные о звонках после последнего запроса
+$previousCallData = []; // Предыдущие данные о звонках
+
 const maxPopups = 5;
 const popups = [];
 let popupCounter = 0;
@@ -176,17 +181,37 @@ async function reqSelectDataCall() {
 		// Verifion si result est un array, sinon on le transforme en array
 		const resultArray = Array.isArray(result) ? result : [result];
 
-		$dataNotif = resultArray.map(call => [
-			call.Id,
-			call.CallLocalTime,
-			call.CustomerID,
-			call.Type,
-			call.Indice,
-			call.IdCampagne,
-			call.TelClient,
-			call.NomCampagne
-		]);
-		console.log('Résultats dataNotif : ', $dataNotif);
+		// Перед обновлением данных сохраняем текущие данные как предыдущие
+		$previousCallData = [...$currentCallData];
+
+		// Обновляем текущие данные
+		$currentCallData = resultArray.map(call => ({
+			Id: call.Id,
+			CallLocalTime: call.CallLocalTime,
+			CustomerID: call.CustomerID,
+			Type: call.Type,
+			Indice: call.Indice,
+			IdCampagne: call.IdCampagne,
+			TelClient: call.TelClient,
+			NomCampagne: call.NomCampagne
+		}));
+
+		// Формируем массив для отображения, исключая звонки, которые уже были обработаны
+		$dataNotif = $currentCallData
+			.filter(call => !$processedCallIds.includes(call.Id))
+			.map(call => [
+				call.Id,
+				call.CallLocalTime,
+				call.CustomerID,
+				call.Type,
+				call.Indice,
+				call.IdCampagne,
+				call.TelClient,
+				call.NomCampagne
+			]);
+
+		console.log('Отфильтрованные данные для отображения:', $dataNotif);
+		console.log('Ранее обработанные звонки:', $processedCallIds);
 	} catch (error) {
 		console.error('Erreur lors de l\'exécution de la requête :', error);
 		$dataNotif = [];
@@ -400,6 +425,11 @@ function createWindowsNotification(callId, telClient, campagne) {
 	// Создаем уведомление
 	const notification = new window.top.Notification(title, options);
 
+	// Добавляем обработчик закрытия для логирования
+	notification.onclose = function () {
+		console.warn(`Уведомление о звонке ${callId} было закрыто. Это могло произойти из-за явного закрытия или автоматически.`);
+	};
+
 	// Обработчик клика на уведомление
 	notification.onclick = function () {
 		// Отмечаем, что на уведомление кликнули
@@ -412,6 +442,12 @@ function createWindowsNotification(callId, telClient, campagne) {
 
 		// Закрываем уведомление
 		this.close();
+		console.log(`Уведомление о звонке ${callId} закрыто после клика пользователя.`);
+
+		// Хак для Chrome: запускаем мигание заголовка
+		if (typeof topWindow.requestAttention === 'function') {
+			topWindow.requestAttention(15); // 15 циклов мигания заголовка
+		}
 
 		// Пытаемся активировать окно более агрессивно
 		try {
@@ -456,8 +492,11 @@ function createWindowsNotification(callId, telClient, campagne) {
 		element: notification,
 		telClient: telClient,
 		campagne: campagne,
-		clicked: false // Флаг для отслеживания клика на уведомление
+		clicked: false, // Флаг для отслеживания клика на уведомление
+		createdAt: new Date().getTime() // Добавляем время создания уведомления для диагностики
 	};
+
+	console.log(`Создано новое уведомление для звонка ${callId}. Опции: requireInteraction=${options.requireInteraction}`);
 
 	// Воспроизводим звук
 	const audio = new Audio('https://github.com/SergeMiro/stock_files/raw/refs/heads/main/notif_appel_court.mp3');
@@ -494,28 +533,29 @@ window.top["inject_notif"] = () => {
 	// Находим завершенные звонки (которые были в предыдущих данных, но нет в текущих)
 	let endedCallIds = previousCallIds.filter(id => !currentCallIds.includes(id));
 
+	console.log(`Обработка данных: текущие звонки=${currentCallIds.length}, новые звонки=${newCallIds.length}, завершенные звонки=${endedCallIds.length}`);
+
 	// Обрабатываем новые звонки
 	newCallIds.forEach(id => {
 		let row = $dataNotif.find(row => row[0] === id);
 		const telClientEntrant = row[6]; // Телефон клиента (индекс 6)
 		const nomCampagneEntrante = row[7]; // Название кампании (индекс 7)
 		showPopup(id, telClientEntrant, nomCampagneEntrante);
+		console.log(`Показан попап для нового звонка ${id}`);
+
+		// Добавляем Id в список обработанных звонков
+		if (!$processedCallIds.includes(id)) {
+			$processedCallIds.push(id);
+		}
 	});
 
-	// Обрабатываем завершенные звонки
+	// Обрабатываем завершенные звонки - просто закрываем уведомления
 	endedCallIds.forEach(id => {
 		let notifData = $displayedNotifications[id];
-		if (notifData && notifData.element) {
-			// Проверяем был ли ответ на уведомление (clicked=true)
-			if (!notifData.clicked) {
-				// Никто не ответил на уведомление, показываем уведомление о пропущенном звонке
-				showMissedCallNotification(id, notifData.telClient, notifData.campagne);
-			}
-
-			// Закрываем оригинальное уведомление
-			if (typeof notifData.element.close === 'function') {
-				notifData.element.close();
-			}
+		if (notifData && notifData.element && typeof notifData.element.close === 'function') {
+			// Закрываем уведомление без отображения нового
+			console.log(`Закрываем уведомление для завершенного звонка ${id}. Время жизни: ${(new Date().getTime() - (notifData.createdAt || 0)) / 1000} сек.`);
+			notifData.element.close();
 
 			// Удаляем из списка отображаемых уведомлений
 			delete $displayedNotifications[id];
@@ -530,84 +570,6 @@ window.top["inject_notif"] = () => {
 
 	console.warn('Notification mise à jour');
 }
-
-// Функция для создания уведомления о пропущенном звонке
-function showMissedCallNotification(callId, telClient, campagne) {
-	// Проверяем, есть ли данные
-	if (!telClient || !campagne) {
-		console.error('Недостаточно данных для создания уведомления о пропущенном звонке');
-		return;
-	}
-
-	const iconUrl = 'https://images.centrerelationsclients.com/Clochette/Notif_Entrant/icon-call-reejected.png';
-	const title = `Appel manqué - campagne : "${campagne}"`;
-	const options = {
-		body: `${telClient} a essayé de vous joindre.`,
-		icon: iconUrl,
-		tag: 'call-missed-' + callId,
-		requireInteraction: true,
-		silent: true
-	};
-
-	// Создаем новое уведомление
-	const notification = new window.top.Notification(title, options);
-
-	// Обработчик клика на уведомление
-	notification.onclick = function () {
-		this.close();
-		console.log('Пользователь нажал на уведомление о пропущенном звонке: ' + callId);
-	};
-
-	// Закрываем уведомление через 10 секунд
-	setTimeout(() => {
-		notification.close();
-	}, 10000);
-
-	// Воспроизводим звуковое уведомление о пропущенном звонке
-	const audio = new Audio('https://github.com/SergeMiro/stock_files/raw/refs/heads/main/notif_appel_manque.mp3');
-	audio.volume = 0.7;
-	audio.play().catch(error => {
-		console.error('Ошибка воспроизведения звука:', error);
-	});
-}
-
-// -+-+-+-+-+-+-+-+-+- Déclaration de la fonction qui affiche la notification
-// window.top["inject_notif"] = () => {
-// 	removePopups(); // Vider les popups
-// 	// Afficher la/les notification(s)
-// 	$dataNotif.reverse().forEach(row => {
-// 		const telClientEntrant = row[6]; // Récuperons le TEL du client
-// 		const nomCampagneEntrante = row[7];  // Récuperons le nom de la CAMPAGNE
-// 		showPopup(telClientEntrant, nomCampagneEntrante);
-// 		// callAnimations = window.top.document.querySelectorAll('.call-animation');
-// 		// iconCallIn = window.top.document.querySelector('#icon-call-in');
-// 		// callAnimations.forEach(callAnimation => {
-// 		// 	callAnimation.classList.add('add-call-animation');
-// 		// 	iconCallIn.classList.add('add-popup-icon');
-// 		// 	flagCallAnimation = true;
-// 		// });
-// 	});
-// 	$dataNotif = [];
-// 	console.warn('Notification affichée');
-// }
-
-
-// ------------------ Déclaration de la fonction qui affiche la notification
-// window.top["inject_notif"] = () => {
-// 	removePopups(); // Vider les popups
-// 	// Afficher la/les notification(s)
-// 	if (Array.isArray($dataNotif)) {
-// 		$dataNotif.reverse().forEach(row => {
-// 			const telClientEntrant = row[6]; // Récuperons le TEL du client
-// 			const nomCampagneEntrante = row[7];  // Récuperons le nom de la CAMPAGNE
-// 			showPopup(telClientEntrant, nomCampagneEntrante);
-// 		});
-// 		$dataNotif = [];
-// 		console.warn('Notification affichée');
-// 	} else {
-// 		console.error('Erreur : $dataNotif n\'est pas un tableau.');
-// 	}
-// }
 
 // Déclaration de la fonction qui compte les appels entrants
 function callsCounter() {
@@ -626,28 +588,14 @@ function callsCounter() {
 	if (tdElements.length >= 3) {
 		$inCallsCounter = parseInt(tdElements[0].querySelector('div').textContent.trim(), 10);
 
-		if (($inCallsCounter !== $newInCallsCounter) && ($inCallsCounter >= $newInCallsCounter)) {
+		// Проверяем изменился ли счетчик в любую сторону
+		if ($inCallsCounter !== $newInCallsCounter) {
 			$newInCallsCounter = $inCallsCounter;
 			main().then(() => {
 				console.warn('Code after MAIN function');
 			}).catch(error => {
 				console.error('Error in main:', error);
 			});
-			// } else if ($inCallsCounter == 0 && flagCallAnimation == true) {
-		} else if ($inCallsCounter == 0) {
-			$newInCallsCounter = $inCallsCounter;
-			// callAnimations = window.top.document.querySelectorAll('.call-animation');
-			// iconCallMissed = window.top.document.querySelector('#icon-call-missed');
-			// console.warn('STOP ANIMATION : ', callAnimations);
-			// if (callAnimations && iconCallMissed) {
-			// 	callAnimations.forEach(callAnimation => {
-			// 		callAnimation.classList.remove('add-call-animation');
-			// 		iconCallIn.classList.remove('add-popup-icon');
-			// 		iconCallMissed.classList.add('add-popup-icon');
-			// 		flagCallAnimation = false;
-			// 		console.warn('flagCallAnimation : ', flagCallAnimation, iconCallMissed);
-			// 	});
-			// }
 		} else {
 			$newInCallsCounter = $inCallsCounter;
 			//console.warn('Aucun changement détecté');
@@ -697,7 +645,18 @@ async function main() {
 	await reqSelectDataCall();
 	console.table('DATA NOTIF', $dataNotif);
 	window.top.inject_notif();
-	// $dataNotif = [];
+
+	// Очищаем старые идентификаторы звонков, если прошло слишком много времени
+	// (например, удаляем записи старше 1 часа)
+	const oneHourAgo = new Date().getTime() - 60 * 60 * 1000;
+	if ($currentCallData.length > 0) {
+		// Очистка старых записей (например, каждые 100 запросов или по времени)
+		if ($processedCallIds.length > 100) {
+			console.warn('Очистка списка обработанных звонков (более 100 записей)');
+			// Оставляем только последние 50 записей
+			$processedCallIds = $processedCallIds.slice(-50);
+		}
+	}
 }
 
 validateAndCreateView();
