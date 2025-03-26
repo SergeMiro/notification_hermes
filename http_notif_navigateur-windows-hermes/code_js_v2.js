@@ -8,17 +8,45 @@ if (window === window.top) {
 		if (event.data === 'FOCUS_WINDOW') {
 			try {
 				// Пытаемся сфокусировать и развернуть окно
-				window.focus();
+				window.top.focus();
 
 				// Разворачиваем окно, если оно минимизировано
 				if (window.top.outerWidth <= 1 || window.top.outerHeight <= 1) {
 					window.top.resizeTo(1024, 768); // Разумный размер по умолчанию
 				}
 
-				// Дополнительная агрессивная фокусировка
-				setTimeout(() => {
-					window.top.focus();
-				}, 100);
+				// Более агрессивный метод для активации окна в Windows
+				try {
+					// Мигание заголовка окна
+					const originalTitle = document.title;
+					const alertTitle = "⚠ NOUVEL APPEL ⚠";
+					let titleInterval = setInterval(() => {
+						document.title = document.title === originalTitle ? alertTitle : originalTitle;
+					}, 500);
+
+					// Останавливаем мигание через 5 секунд
+					setTimeout(() => {
+						clearInterval(titleInterval);
+						document.title = originalTitle;
+					}, 5000);
+
+					// Открытие временного окна
+					const tempWindow = window.open('about:blank', '_blank', 'width=1,height=1');
+					if (tempWindow) setTimeout(() => tempWindow.close(), 500);
+
+					// Попытка вызова focus несколько раз
+					let focusAttempts = 0;
+					const focusInterval = setInterval(() => {
+						window.top.focus();
+						focusAttempts++;
+						if (focusAttempts >= 10) {
+							clearInterval(focusInterval);
+						}
+					}, 100);
+				} catch (e) {
+					console.error("Ошибка при агрессивной фокусировке:", e);
+				}
+
 			} catch (error) {
 				console.error('Ошибка при попытке активировать окно через postMessage:', error);
 			}
@@ -48,7 +76,6 @@ $idsAgentCampaigns = [];
 $dataNotif = [];
 $inCallsAnswered = [];
 
-// Массивы для отслеживания обработанных звонков
 $processedCallIds = []; // Массив для хранения Id звонков, которые уже были обработаны
 $currentCallData = []; // Текущие данные о звонках после последнего запроса
 $previousCallData = []; // Предыдущие данные о звонках
@@ -62,11 +89,8 @@ let iconCallMissed = '';
 let popupContainer = null;
 //let flagCallAnimation = false;
 
-// Массив для новых данных после SQL-запроса
 $notifNewLines = [];
-// Объект для отслеживания скрытых оповещений и их таймеров
 $hiddenNotifications = {}; // { [callId]: timeoutId }
-// Объект для отслеживания отображаемых попапов
 $displayedNotifications = {}; // { [callId]: popupElement }
 let currentCallIds = []; // Текущие ID звонков
 let previousCallIds = []; // Глобальная переменная для хранения предыдущих идентификаторов звонков
@@ -392,20 +416,34 @@ function appendNotifHtml() {
 function createWindowsNotification(callId, telClient, campagne) {
 	const iconUrl = 'https://images.centrerelationsclients.com/Clochette/Notif_Entrant/icon-incall.png';
 	const title = `Appel entrant Hèrmes, campagne : "${campagne}"`;
+
+	// Создаем уникальный тег для каждого уведомления, используя timestamp
+	const uniqueTag = `call-${callId}-${Date.now()}`;
+
 	const options = {
 		body: `${telClient} vous appelle.`,
 		icon: iconUrl,
-		tag: 'call-' + callId, // Тег для группировки уведомлений
-		requireInteraction: true, // Уведомление будет отображаться, пока пользователь не взаимодействует с ним
-		silent: true // Отключаем стандартный звук уведомления, так как у нас есть свой
+		tag: uniqueTag, // Уникальный тег для каждого уведомления
+		requireInteraction: true,
+		silent: true,
+		timestamp: Date.now(), // Добавляем timestamp для сортировки
+		data: { // Добавляем дополнительные данные
+			callId: callId,
+			createdAt: Date.now()
+		}
 	};
 
-	// Создаем уведомление без window.top
+	// Создаем уведомление
 	const notification = new Notification(title, options);
 
 	// Добавляем обработчик закрытия для логирования
 	notification.onclose = function () {
 		console.warn(`Уведомление о звонке ${callId} было закрыто. Это могло произойти из-за явного закрытия или автоматически.`);
+
+		// Удаляем уведомление из списка отображаемых
+		if ($displayedNotifications[callId]) {
+			delete $displayedNotifications[callId];
+		}
 	};
 
 	// Упрощенный обработчик клика на уведомление
@@ -415,34 +453,20 @@ function createWindowsNotification(callId, telClient, campagne) {
 			$displayedNotifications[callId].clicked = true;
 		}
 
-		// Закрываем уведомление
-		this.close();
-		console.log(`Уведомление о звонке ${callId} закрыто после клика пользователя.`);
-
 		try {
-			// Сначала воспроизводим звук - часто помогает активировать окно
-			const activationSound = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==");
-			activationSound.play().catch(e => { });
+			// Воспроизводим короткий звук для активации окна
+			const audio = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==");
+			audio.play().catch(e => { });
 
-			// Фокусировка без перезагрузки страницы
-			window.focus();
+			// Закрываем уведомление
+			this.close();
+			console.log(`Уведомление о звонке ${callId} закрыто после клика пользователя.`);
 
-			// Более агрессивные методы фокусировки без перезагрузки
-			if (window.parent) {
-				window.parent.focus();
-			}
+			// Фокусируем окно
+			window.top.focus();
 
-			// Для Chrome - попытка фокусировки через API браузера без перезагрузки
-			if (window.chrome && window.chrome.windows) {
-				window.chrome.windows.getCurrent(function (win) {
-					window.chrome.windows.update(win.id, { focused: true, state: 'normal' });
-				});
-			}
-
-			// Для IE/Edge
-			if (window.external && typeof window.external.msIsSiteMode === 'function') {
-				window.external.msSiteModeActivate();
-			}
+			// Отправляем сообщение для активации окна
+			window.top.postMessage('FOCUS_WINDOW', '*');
 
 			console.log('Пользователь нажал на уведомление о звонке: ' + callId);
 		} catch (error) {
@@ -450,19 +474,23 @@ function createWindowsNotification(callId, telClient, campagne) {
 		}
 	};
 
-	// Сохраняем ссылку на уведомление с дополнительными данными
+	// Сохраняем уведомление в списке отображаемых
 	$displayedNotifications[callId] = {
 		element: notification,
 		telClient: telClient,
 		campagne: campagne,
-		clicked: false, // Флаг для отслеживания клика на уведомление
-		createdAt: new Date().getTime() // Добавляем время создания уведомления для диагностики
+		clicked: false,
+		createdAt: Date.now(),
+		tag: uniqueTag // Сохраняем тег для отслеживания
 	};
 
-	console.log(`Создано новое уведомление для звонка ${callId}. Опции: requireInteraction=${options.requireInteraction}`);
+	// Проверяем количество активных уведомлений
+	const activeNotifications = Object.keys($displayedNotifications).length;
+	console.log(`Активных уведомлений: ${activeNotifications}`);
 
 	// Воспроизводим звук
-	const audio = new Audio('https://github.com/SergeMiro/stock_files/raw/refs/heads/main/notif_appel_court.mp3');
+	//const audio = new Audio('https://github.com/SergeMiro/stock_files/raw/refs/heads/main/notif_appel_court.mp3');
+	const audio = new Audio('https://images.centrerelationsclients.com/Clochette/Notif_Entrant/rington_for_workspace_hermes.mp3');
 	audio.volume = 0.7;
 	audio.play().catch(error => {
 		console.error('Ошибка воспроизведения звука:', error);
@@ -676,14 +704,8 @@ function affichePopupContainer(isVisible) {
 	}
 }
 
-// Affichez le container des popup
-function affichePopupContainer(isVisible) {
-	if (popupContainer) {
-		popupContainer.style.display = isVisible ? 'block' : 'none';
-	}
-}
 
-// Fonction для создания нативного уведомления Windows
+// Fonction pour créer une notification native Windows
 function showPopup(callId, telClient, campagne) {
 	// Проверяем поддержку уведомлений браузером
 	if (!("Notification" in window)) {
