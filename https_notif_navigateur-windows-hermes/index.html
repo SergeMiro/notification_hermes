@@ -4,155 +4,89 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>Notification Hèrmes</title>
+	<title>3D Logo Animation</title>
+	<link rel="icon" type="image/x-icon" href="./favicon.ico">
 	<style>
-		#call-container {
-			display: flex;
-			justify-content: center;
-			align-items: center;
-			height: 100vh;
+		body {
+			margin: 0;
+			height: 2000px;
 		}
 
-		#confirm-notif {
-			display: none;
+		canvas {
 			position: fixed;
-			top: 10px;
-			left: 10px;
-			padding: 15px;
-			background-color: #7a4949;
-			color: #fff;
-			border-radius: 5px;
-			box-shadow: 0 0 10px rgba(136, 76, 76, 0.774);
-			z-index: 1000;
-		}
-
-		#confirm-notif::before {
-			content: '';
-			position: absolute;
-			top: -10px;
-			border-width: 0 10px 10px 10px;
-			border-style: solid;
-			border-color: transparent transparent #7e6363 transparent;
-		}
-
-		/* Default for Chrome */
-		.chrome #confirm-notif::before {
-			right: 205px;
-		}
-
-		/* Specific for Firefox */
-		.firefox #confirm-notif::before {
-			right: 38px;
+			top: 0;
+			left: 0;
+			width: 100%;
+			height: 100%;
 		}
 	</style>
-	<script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.1/howler.min.js"></script>
+	<script type="importmap">
+        {
+          "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.167.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.167.0/examples/jsm/"
+          }
+        }
+    </script>
 </head>
 
 <body>
-	<div id="call-container">
-		<button id="call">Simulation d'appel</button>
-	</div>
+	<script type="module">
+		import * as THREE from 'three';
+		import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-	<div id="confirm-notif">Veuillez autoriser les notifications du navigateur</div>
+		const scene = new THREE.Scene();
+		const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+		const renderer = new THREE.WebGLRenderer({ alpha: true });
+		renderer.setSize(window.innerWidth, window.innerHeight);
+		document.body.appendChild(renderer.domElement);
 
-	<script>
-		const nomClient = 'Vincent Hiest';
-		const campagne_1 = 'Location';
+		// Chargement du modèle 3D
+		const loader = new GLTFLoader();
+		let logo;
+		loader.load('./logo_3d_fimainfo.glb', (gltf) => {
+			logo = gltf.scene;
+			scene.add(logo);
+			logo.position.set(0, 0, 0);
+			logo.scale.set(1, 1, 1);
+		}, undefined, (error) => {
+			console.error('Erreur de chargement du modèle :', error);
+		});
 
-		// Fonction pour détecter le navigateur et ajouter la classe correspondante pour afficher le popup correctement
-		function detectBrowser() {
-			const userAgent = navigator.userAgent.toLowerCase();
-			if (userAgent.indexOf('firefox') > -1) {
-				document.body.classList.add('firefox');
-			} else if (userAgent.indexOf('chrome') > -1 || userAgent.indexOf('chromium') > -1) {
-				document.body.classList.add('chrome');
+		camera.position.z = 5;
+
+		// Éclairage
+		const light = new THREE.AmbientLight(0xffffff, 0.8);
+		scene.add(light);
+		const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+		directionalLight.position.set(0, 1, 1);
+		scene.add(directionalLight);
+
+		// Animation à l'ouverture
+		function animate() {
+			requestAnimationFrame(animate);
+			if (logo) {
+				logo.rotation.y += 0.01;
 			}
+			renderer.render(scene, camera);
 		}
+		animate();
 
-		// Fonctions pour le popup d'alerte qui indique qu'il faut autoriser les notifications
-		function popupAlertNotif() {
-			const popup = document.getElementById('confirm-notif');
-			popup.style.display = 'block';
-			checkNotificationPermission();
-		}
-		function hidePopupAlertNotif() {
-			const popup = document.getElementById('confirm-notif');
-			popup.style.display = 'none';
-		}
-
-		// Demande d'autorisation une fois la page est chargée et affichage du popup
-		document.addEventListener('DOMContentLoaded', () => {
-			detectBrowser();
-			if (Notification.permission !== 'granted') {
-				Notification.requestPermission().then(permission => {
-					if (permission !== 'granted') {
-						popupAlertNotif();
-					}
-				});
+		// Réaction au défilement
+		window.addEventListener('scroll', () => {
+			if (logo) {
+				const scrollY = window.scrollY;
+				logo.position.y = -scrollY * 0.002;
+				logo.rotation.x = scrollY * 0.001;
+				logo.scale.set(1 + scrollY * 0.0002, 1 + scrollY * 0.0002, 1);
 			}
 		});
 
-		// Fonction de vérification de l'autorisation
-		function checkNotificationPermission() {
-			if (Notification.permission !== 'granted') {
-				setTimeout(checkNotificationPermission, 1000);
-			} else {
-				hidePopupAlertNotif();
-			}
-		}
-
-
-		/**
-		 * Fonction de gestion de l'autorisation de notification et affichage du popup si l'autorisation est refusée.
-		 * @param {Function} callback - La fonction à appeler si l'autorisation de notification est accordée.
-		 */
-		function requestNotificationPermission(callback) {
-			if (Notification.permission === 'granted') {
-				// Si l'autorisation est déjà accordée, exécuter la fonction de rappel
-				callback();
-			} else if (Notification.permission !== 'denied') {
-				// Si l'autorisation n'est pas refusée, demander l'autorisation à l'utilisateur
-				Notification.requestPermission().then(permission => {
-					if (permission === 'granted') {
-						// Si l'autorisation est accordée, cacher le popup et exécuter la fonction de rappel
-						hidePopupAlertNotif();
-						callback();
-					} else {
-						// Si l'autorisation est refusée, afficher l'alerte de notification popup
-						popupAlertNotif();
-					}
-				});
-			} else {
-				// Si l'autorisation est refusée, afficher l'alerte de notification popup
-				popupAlertNotif();
-			}
-		}
-
-
-		// Fonction de notification Hèrmes + navigateur en bas à gauche
-		function notifHermesBrowser() {
-			const notification = new Notification(`Appel entrant Hèrmes, campagne : "${campagne_1}"`, {
-				body: `${nomClient} vous appelle.`,
-				icon: './icon-appel.png',
-				requireInteraction: true,
-				silent: true
-			});
-			notification.onclick = () => {
-				window.focus();
-				notification.close();
-			};
-			// Son d'alerte
-			const audio = new Audio('./notif_appel.mp3');
-			audio.play().catch(error => {
-				console.error('Son introuvable, veuillez vérifier le chemin', error);
-			});
-		}
-
-
-		document.getElementById('call').addEventListener('click', function () {
-			setTimeout(() => {
-				requestNotificationPermission(notifHermesBrowser);
-			}, 3000);
+		// Adaptation à la taille de la fenêtre
+		window.addEventListener('resize', () => {
+			camera.aspect = window.innerWidth / window.innerHeight;
+			camera.updateProjectionMatrix();
+			renderer.setSize(window.innerWidth, window.innerHeight);
 		});
 	</script>
 </body>

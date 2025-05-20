@@ -1,729 +1,587 @@
-// *** IMPORTANT ***
-// le fichier "fimainfo_notifications.css" avec tout le code CSS du projet se trouve dans le dossier suivant : \\192.168.9.237\d\hermes_net_v5\PlateformPublication\Frameset_Includes\styles
-// "fimainfo_notifications.css" est modfiable mais ne jamais doit etre deplacé.
+// ----------------------------- DÉCLARATION DES VARIABLES --------------------------------
+// A changer si cloud-4 => https
+let protocol = "http";
+let cloud = null;
+$db_dev = "HN_FIMAINFO";
+let db_client = null;
 
-// Добавляем обработчик сообщений для верхнего окна для фокусировки
-if (window === window.top) {
-	window.top.addEventListener('message', function (event) {
-		if (event.data === 'FOCUS_WINDOW') {
-			try {
-				// Пытаемся сфокусировать и развернуть окно
-				window.top.focus();
+// ----------------------------------------------------------------------------------------
+let agentInfo = {};
 
-				// Разворачиваем окно, если оно минимизировано
-				if (window.top.outerWidth <= 1 || window.top.outerHeight <= 1) {
-					window.top.resizeTo(1024, 768); // Разумный размер по умолчанию
-				}
+$agentData = {};
+let customerId = null;
+let agentCode = null;
+let agentOid = null;
 
-				// Более агрессивный метод для активации окна в Windows
-				try {
-					// Мигание заголовка окна
-					const originalTitle = document.title;
-					const alertTitle = "⚠ NOUVEL APPEL ⚠";
-					let titleInterval = setInterval(() => {
-						document.title = document.title === originalTitle ? alertTitle : originalTitle;
-					}, 500);
+// Variables pour le compteur
+let nextUpdateTime = null;
+let updateCountdownInterval = null;
+const UPDATE_INTERVAL_MS = 70000; // 1.2 min
 
-					// Останавливаем мигание через 5 секунд
-					setTimeout(() => {
-						clearInterval(titleInterval);
-						document.title = originalTitle;
-					}, 5000);
+// Variables pour stocker les données des appels perdus
+$lostCallsData = [];
+$frCallsCount = 0;
+$nlCallsCount = 0;
 
-					// Открытие временного окна
-					const tempWindow = window.open('about:blank', '_blank', 'width=1,height=1');
-					if (tempWindow) setTimeout(() => tempWindow.close(), 500);
+// =============================================================================================
+// =============================================================================================
+/* Pour deployer la clochette chez Nouveau Client, il faut SEULEMENT rajouter une ligne comme :
+ => db_client = "HN_EXEMPLE"; 
+ dans la condition de Cloud concerné de la fonction recupDb(customerId) */
+// =============================================================================================
+// Fonction qui switch les noms de DB en fonctionne de CustomerId et Cloud
+async function recupDb(customerId) {
+ // Convertir customerId en string pour assurer la comparaison correcte dans le switch
+ customerId = String(customerId);
+ console.warn('CustomerId converti en string:', customerId, 'type:', typeof customerId);
 
-					// Попытка вызова focus несколько раз
-					let focusAttempts = 0;
-					const focusInterval = setInterval(() => {
-						window.top.focus();
-						focusAttempts++;
-						if (focusAttempts >= 10) {
-							clearInterval(focusInterval);
-						}
-					}, 100);
-				} catch (e) {
-					console.error("Ошибка при агрессивной фокусировке:", e);
-				}
+ if (cloud == "192.168.9.236") {
 
-			} catch (error) {
-				console.error('Ошибка при попытке активировать окно через postMessage:', error);
-			}
-		}
-	}, false);
+  switch (customerId) {
+   case "12":
+    db_client = "HN_BERNARD";
+    break;
+   case "13":
+    db_client = "HN_BERNIER";
+    break;
+   case "4":
+    db_client = "HN_CHOPARD";
+    break;
+   case "9":
+    db_client = "HN_CRC";
+    break;
+  }
+ }
+
+ else if (cloud == "192.168.9.237") {
+  switch (customerId) {
+   case "7":
+    db_client = "HN_JMJ";
+    break;
+   case "14":
+    db_client = "HN_CCF_BORDEAUX";
+    break;
+   case "31":
+    db_client = "HN_GUYOT";
+    break;
+  }
+ }
+
+ else if (cloud == "c4-web.fimainfo.fr") {
+  switch (customerId) {
+   case "14":
+    db_client = "HN_CCF_BORDEAUX";
+    break;
+   case "31":
+    db_client = "HN_GUYOT";
+    break;
+  }
+ }
+
+ else if (cloud == "steweb01.ibermaticacloud.com") {
+  console.warn('+++++++++++++++++++++++++++++++++++++++++++++++++++++++');
+
+  switch (customerId) {
+   case "9":
+    db_client = "HN_CCF_BELGIQUE";
+    break;
+   case "11":
+    db_client = "HN_CCF_MADRID";
+    break;
+  }
+ }
+
+ console.warn('++==============================================++++');
+
+ console.table({
+  "CustomerId": customerId,
+  "Cloud": cloud,
+  "Database client": db_client
+ }
+
+ );
+ return db_client;
 }
 
-// ----------------------------- DECLARATION DES VARIABLES --------------------------------
-// для SQL :
-$db_client = "HN_GUYOT"
-$customerId = 31;  // CustomerID à changer en fonction du client
-$campaignType = 1; // 1 - entrants, 2 - sortants
-$queuesType = "Queues";	// "Queues" - Campagnes entrants | "QueuesOutbound" - sortants
+// =============================================================================================
+// =============================================================================================
 
-$view_notif = "Fimainfo_NotificationHermes_Clochette";
-$cloud_1 = "192.168.9.236"
-$cloud_2 = "192.168.9.237"
-$cloud_4 = "c4-web.fimainfo.fr"
+// ----------------------------- REQUÊTES SQL DE LA CLOCHETTE -----------------------------------
 
-// для JS :
-$inCallsCounter = 0;
-$newInCallsCounter = 0;
-$campaignAgent = [];
-$listeVues = [];
-$campaignsConnected = [];
-$idsAgentCampaigns = [];
-$dataNotif = [];
-$inCallsAnswered = [];
+async function reqSelectAgentData() {
+ let selectDataAgent = ``;
 
-$processedCallIds = []; // Массив для хранения Id звонков, которые уже были обработаны
-$currentCallData = []; // Текущие данные о звонках после последнего запроса
-$previousCallData = []; // Предыдущие данные о звонках
+ if (agentInfo?.agentCode && agentInfo?.agentOid) {
+  selectDataAgent = ` SELECT * FROM [HN_FIMAINFO].[dbo].[AgentIdentData] WHERE AgentOid='${agentInfo.agentOid}'
 
-const maxPopups = 5;
-const popups = [];
-let popupCounter = 0;
-let callAnimations = '';
-let iconCallIn = '';
-let iconCallMissed = '';
-let popupContainer = null;
-//let flagCallAnimation = false;
+      AND AgentCode=$ {
+         agentInfo.agentCode
+      }
 
-$notifNewLines = [];
-$hiddenNotifications = {}; // { [callId]: timeoutId }
-$displayedNotifications = {}; // { [callId]: popupElement }
-let currentCallIds = []; // Текущие ID звонков
-let previousCallIds = []; // Глобальная переменная для хранения предыдущих идентификаторов звонков
+      `;
+  console.warn('selectDataAgent :', selectDataAgent);
+ }
 
-// ------------------ DECLARATION DES FONCTIONS avec REQUETTES SQL ------------------------
+ try {
+  const result = await reqSelect(db_client, selectDataAgent);
 
-// Fonction SELECT liste des Vues SQL du client
-async function reqSelectListsVues() {
-	// Requete pour recuperer la liste des vues du client
-	const query = `
-	 SELECT 
-	 CONCAT(DB_NAME(), '.', SCHEMA_NAME(SCHEMA_ID()), '.', TABLE_NAME) as 'liste_vues'
-	 FROM INFORMATION_SCHEMA.VIEWS
-	 WHERE TABLE_SCHEMA = 'dbo'
-	 ORDER BY TABLE_NAME;
-	`;
-	try {
-		const result = await reqSelect(`${$db_client}`, query);
-		$listeVues = result.map(vues => [
-			vues.liste_vues
-		]);
-		console.log('Résultats liste vues : ', $listeVues);
-	} catch (error) {
-		console.error('Erreur lors de l\'exécution de la requête :', error);
-		$listeVues = [];
-	}
+  if (result && typeof result === 'object' && Object.keys(result).length > 0) {
+   $agentData = result;
+   console.warn('agentData :', $agentData);
+  }
+
+  else {
+   console.warn('Le résultat de la requête est vide ou incorrect');
+  }
+ }
+
+ catch (error) {
+  console.error("Erreur lors de l'exécution de la requête :", error);
+
+  $agentData = {}
+
+   ;
+ }
 }
 
+// Fonction qui récupère les données des appels perdus
+async function reqSelectLostCalls() {
+ const selectLostCalls = ` SELECT * FROM [HN_FIMAINFO].[dbo].[LostCallsPending_clochette] `;
+ console.warn('reqSelectLostCalls', selectLostCalls);
 
-// Fonction de creation d'une Vue SQL
-async function reqInsertVueNotif() {
-	try {
-		// Проверка наличия имени представления (view) и клиента базы данных
-		if (!$view_notif || !$db_client) {
-			console.warn("Aucune vue à créer ou client de base de données non spécifié.");
-			return;
-		}
-		// Création de la requête pour créer la vue SQL NotificationHermes
-		const query = `
-		CREATE VIEW ${$view_notif} AS
-		SELECT
-			c.ID AS 'Id',
-			FORMAT(c.CallLocalTime, 'yyyy-MM-dd HH:mm:ss.fff') AS 'CallLocalTime',
-			c.CustomerID,
-			ISNULL(t.Description, c.CallType) AS 'Type',
-			c.Indice,
-			LEFT(
-				CASE 
-					WHEN c.OutTel = '' THEN c.ANI 
-					ELSE c.OutTel 
-				END, 
-				IIF(
-					CHARINDEX('-', CASE WHEN c.OutTel = '' THEN c.ANI ELSE c.OutTel END) > 0, 
-					CHARINDEX('-', CASE WHEN c.OutTel = '' THEN c.ANI ELSE c.OutTel END) - 1, 
-					0
-				)
-			) AS 'IdCampagne',
-			RIGHT(
-				CASE 
-					WHEN c.OutTel = '' THEN c.ANI 
-					ELSE c.OutTel 
-				END, 
-				IIF(
-					CHARINDEX('-', CASE WHEN c.OutTel = '' THEN c.ANI ELSE c.OutTel END) > 0, 
-					LEN(CASE WHEN c.OutTel = '' THEN c.ANI ELSE c.OutTel END) - CHARINDEX('-', CASE WHEN c.OutTel = '' THEN c.ANI ELSE c.OutTel END), 
-					0
-				)
-			) AS 'TelClient',
-			cam.Description AS 'NomCampagne',
-			c.FirstAgent AS 'Agent',
-			CAST('0' AS NVARCHAR(1)) AS 'InCallAnswered'
-		FROM
-			HN_Ondata.dbo.ODCalls AS c
-		LEFT OUTER JOIN
-			HN_Ondata.dbo.CallTypes AS t ON c.CallType = t.CallType
-		LEFT OUTER JOIN
-			[HN_Admin].[dbo].[Campaigns] AS cam ON 
-			LEFT(
-				CASE 
-					WHEN c.OutTel = '' THEN c.ANI 
-					ELSE c.OutTel 
-				END, 
-				IIF(
-					CHARINDEX('-', CASE WHEN c.OutTel = '' THEN c.ANI ELSE c.OutTel END) > 0, 
-					CHARINDEX('-', CASE WHEN c.OutTel = '' THEN c.ANI ELSE c.OutTel END) - 1, 
-					0
-				)
-			) = cam.DID;
-		`;
-		await reqInsert($db_client, query);
-	} catch (error) {
-		console.error(`Erreur de création de la Vue SQL : ${$view_notif}`, error);
-	}
+ try {
+  const result = await reqSelect(db_client, selectLostCalls);
+  $lostCallsData = result;
+
+  // Compter les appels par pays
+  $frCallsCount = 0;
+  $nlCallsCount = 0;
+
+  if (Array.isArray($lostCallsData)) {
+   $lostCallsData.forEach(row => {
+    if (row.Country === 'FR') {
+     $frCallsCount++;
+    }
+
+    else if (row.Country === 'NL') {
+     $nlCallsCount++;
+    }
+   }
+
+   );
+  }
+
+  console.log("Données d'appels perdus mises à jour:", {
+   total: $lostCallsData.length,
+   FR: $frCallsCount,
+   NL: $nlCallsCount
+  }
+
+  );
+
+  return $lostCallsData;
+ }
+
+ catch (error) {
+  console.error("Erreur lors de la récupération des appels perdus:", error);
+  $lostCallsData = [];
+  $frCallsCount = 0;
+  $nlCallsCount = 0;
+  return [];
+ }
 }
 
+// ----------------------------- FONCTIONS UTILITAIRES ------------------------------------ 
 
-// Fonctions SELECT appels en cours
-async function reqSelectDataCall() {
-	const query = `
-	SELECT TOP (10) * FROM ${$db_client}.dbo.${$view_notif}
-	WHERE Type = 'Inbound call'
-	AND CustomerID = '${$customerId}'
-	AND IdCampagne IN (${$idsAgentCampaigns.map(id => `'${id}'`).join(', ')}) 
-	AND Indice = 0 
-	ORDER BY CallLocalTime DESC
-	`;
-	console.log('Requête :', query);
-	try {
-		const result = await reqSelect(`${$db_client}`, query);
-		console.log('Résultats de la requête : ', result);
-
-		// Verifion si result est un array, sinon on le transforme en array
-		const resultArray = Array.isArray(result) ? result : [result];
-
-		// Перед обновлением данных сохраняем текущие данные как предыдущие
-		$previousCallData = [...$currentCallData];
-
-		// Обновляем текущие данные
-		$currentCallData = resultArray.map(call => ({
-			Id: call.Id,
-			CallLocalTime: call.CallLocalTime,
-			CustomerID: call.CustomerID,
-			Type: call.Type,
-			Indice: call.Indice,
-			IdCampagne: call.IdCampagne,
-			TelClient: call.TelClient,
-			NomCampagne: call.NomCampagne
-		}));
-
-		// Формируем массив для отображения, исключая звонки, которые уже были обработаны
-		$dataNotif = $currentCallData
-			.filter(call => !$processedCallIds.includes(call.Id))
-			.map(call => [
-				call.Id,
-				call.CallLocalTime,
-				call.CustomerID,
-				call.Type,
-				call.Indice,
-				call.IdCampagne,
-				call.TelClient,
-				call.NomCampagne
-			]);
-
-		console.log('Отфильтрованные данные для отображения:', $dataNotif);
-		console.log('Ранее обработанные звонки:', $processedCallIds);
-	} catch (error) {
-		console.error('Erreur lors de l\'exécution de la requête :', error);
-		$dataNotif = [];
-	}
+// Fonction qui check URL pour cibler le CLOUD est le mettre dans la variable
+function checkURL() {
+ const url = window.location.hostname;
+ let cloud = url;
+ console.log('cloud:', cloud);
+ return cloud;
 }
 
+// Fonction qui extrait les données de AgentLink
+async function findAgentData() {
+ try {
+  const result = await GetAgentLink();
+  agentCode = result.AgentCode;
+  agentOid = result.AgentOid;
+  customerId = result.CustomerId;
 
+  if (!agentCode || !agentOid || !customerId) {
+   console.error("Erreur: agentCode, agentOid ou customerId sont manquants dans le résultat de GetAgentLink().");
 
+   return {
+    agentCode: null, agentOid: null, customerId: null
+   };
+  }
+  console.warn("Extrait de AgentLink:", {
+   agentCode, agentOid, customerId
+  });
+  return {
+   agentCode,
+   agentOid,
+   customerId
+  };
+ }
 
-async function reqUpdateAnsweredCallFlag() {
-	try {
-		const query = `
-		UPDATE ${$db_client}.dbo.${$view_notif} 
-		SET InCallAnswered = '1'
-		WHERE IdCampagne = '${$inCallsAnswered[0].CampaignId}'
-		AND TelClient = '${$inCallsAnswered[0].ContactNumber}';
-		`;
-		if (!$view_notif || !$db_client) {
-			console.warn("");
-			return;
-		}
-
-		await reqUpdate($db_client, query);
-	} catch (error) {
-		console.error(`Erreur d'Updade de Flag de l'appel entrant : ${$inCallsAnswered[0].ContactNumber}`, error);
-	}
+ catch (error) {
+  console.error("Erreur lors de l'appel de GetAgentLink :", error);
+  return {
+   agentCode: null, agentOid: null, customerId: null
+  };
+ }
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// ----------------------------- FONCTIONS UTILITAIRES ------------------------------------
-// Fonction pour valider et creer la vue SQL si elle n'existe pas
-async function validateAndCreateView() {
-	try {
-		// Vérifier si la vue existe déjà dans la liste des vues
-		await reqSelectListsVues();
-		if ($listeVues.some(view => view[0] === `${$db_client}.dbo.${$view_notif}`)) {
-			console.warn(`La Vue ${$view_notif} existe déjà.`);
-		} else {
-			// Si la vue n'existe pas, la créer
-			await reqInsertVueNotif();
-			console.warn(`La Vue SQL : ${$view_notif} a bien été créée.`);
-		}
-	} catch (error) {
-		console.error('Erreur lors de la vérification et de la création de la vue:', error);
-	}
-}
-
-// Fonction pour charger le fichier CSS personnalisé dans DOM de Hermes.net (Workspace) 
+// Fonction pour charger le fichier CSS personnalisé dans DOM de Hermes.net (Workspace)
 function loadCssFileInWorkspace(filename) {
-	var link = window.top.document.createElement('link');
-	var timestamp = new Date().getTime();
-	link.href = `https://${$cloud_4}/hermes_net_v5/PlateformPublication/Frameset_Includes/styles/${filename}?v=${timestamp}`;
-	console.warn("CSS File URL:", link.href);
-	link.type = 'text/css';
-	link.rel = 'stylesheet';
-	link.setAttribute('cache-control', 'no-cache, no-store, must-revalidate');
-	link.setAttribute('pragma', 'no-cache');
-	link.setAttribute('expires', '0');
-	window.top.document.head.appendChild(link);
+ var link = window.top.document.createElement('link');
+ var timestamp = new Date().getTime();
+
+ link.href = `${protocol}://${cloud}/hermes_net_v5/PlateformPublication/Frameset_Includes/styles/${filename}?v=${timestamp}`;
+ console.warn("CSS File URL:", link.href);
+ link.type = 'text/css';
+ link.rel = 'stylesheet';
+ link.setAttribute('cache-control', 'no-cache, no-store, must-revalidate');
+ link.setAttribute('pragma', 'no-cache');
+ link.setAttribute('expires', '0');
+ window.top.document.head.appendChild(link);
 }
 
-
-// Fonction qui vérifie les campagnes associées à l'agent
-function checkCampaigns(typeCampagne) {
-	if (GetAgentLink().Campaigns && GetAgentLink().Campaigns._data) {
-		let campaigns = GetAgentLink().Campaigns._data;
-		let filteredCampaigns = campaigns.filter(campaign => campaign.Type === typeCampagne);
-		// Crée une nouvelle liste d'objets avec CampaignId, Description et Queue
-		dataCampagnesAgent = filteredCampaigns.map(campaign => ({
-			CampaignId: campaign.CampaignId,
-			Description: campaign.Description,
-			Queue: campaign.Queue
-		}));
-		console.warn("Toutes les campagnes entrantes de l'agent :", dataCampagnesAgent);
-	}
-	if (dataCampagnesAgent.length === 0) {
-		setTimeout(() => checkCampaigns(typeCampagne), 3000);
-	}
+// Injection du code HTML de la clochette dans Workspace
+function appendClochetteInHtml() {
+ GetAgentFrame().$(".BodyWorkspace").append(` <div class="wrap-notification"> <div class="toggle-button"> <img class="i-flash-right"></img> </div> <div id="notification-detail-slide"> <div id="slide-container"> </div> <div id="detail-button"class="detail-button"title="Voir les détails"> <img src="https://images.centrerelationsclients.com/Clochette/icon_details.png"alt="details"> </div> <div id="detail-table-container"class="detail-table-container"style="display:none;"> <table id="detail-table"class="detail-table"> <thead> <tr> <th>Pays</th> <th>Indice</th> <th>Téléphone</th> <th>Date et heure</th> </tr> </thead> <tbody> </tbody> </table> </div> </div> <div class="container-notification"> <div id="notification_id"class="notification"> </div> <div id="notification_id_relances"class="notification-relances"> </div> </div> </div> `);
 }
 
+// Fonction pour configurer le bouton toggle
+function configureToggleButton() {
+ const toggleButton = window.top.document.querySelector('.toggle-button');
+ const notificationDetail = window.top.document.getElementById('notification-detail-slide');
+ const icon = toggleButton.querySelector('img');
 
-// Fonction qui vérifie les campagnes connectées de l'agent
-function checkCampaignsConnected(queuesType) {
-	const queuesData = GetAgentLink().Telephony[queuesType]._data;
-	let previousCount = $campagnesConnectees?.length || 0;
-	$campagnesConnectees = [];
-	const enabledQueues = queuesData.filter(queue => queue.EnabledBy !== 0);
-	enabledQueues.forEach(queue => {
-		$campagnesConnectees.push({
-			Description: queue.Description,
-			Queue: queue.QueueId
-		});
-	});
-	let currentCount = $campagnesConnectees.length;
-	if (currentCount === 0) {
-		$idsAgentCampaigns = [];
-		console.warn('=== BOUCLE-1', previousCount, currentCount);
-		setTimeout(() => checkCampaignsConnected(queuesType), 3000);
-	} else if (currentCount !== previousCount) {
-		console.warn('=== BOUCLE-2', previousCount, currentCount);
-		$idsAgentCampaigns = [];
-		matchingCampaigns();
-		setTimeout(() => checkCampaignsConnected(queuesType), 3000);
-	} else {
-		console.warn('=== BOUCLE-3', previousCount, currentCount);
-		setTimeout(() => checkCampaignsConnected(queuesType), 3000);
-	}
-	return $campagnesConnectees;
+ if (toggleButton && notificationDetail && icon) {
+  toggleButton.addEventListener('click', function () {
+   if (notificationDetail.style.right === "0px" || notificationDetail.style.right === "") {
+    notificationDetail.style.transition = "right 0.5s";
+    notificationDetail.style.right = "-540px";
+    icon.classList.remove("i-flash-right");
+    icon.classList.add("i-flash-left");
+    isPopupPinned = false;
+   }
+
+   else {
+    notificationDetail.style.transition = "right 0.5s";
+    notificationDetail.style.right = "0px";
+    icon.classList.remove("i-flash-left");
+    icon.classList.add("i-flash-right");
+    isPopupPinned = true;
+   }
+  }
+
+  );
+ }
+
+ else {
+  console.log("L'élément toggle button n'a pas été trouvé");
+ }
 }
 
+// Fonction inject_data mise à jour pour afficher les données d'appels perdus
+window.top["inject_data"] = () => {
+ // Mise à jour des éléments de notification principaux
+ const el = window.top.document.querySelector('.notification');
+ const elRelances = window.top.document.querySelector('.notification-relances');
 
-// Fonction qui compare les files d'attente et retourne les CampaignId groupés par Queue
-function matchingCampaigns() {
-	$idsAgentCampaigns = [];
-	const queueGroups = {};
-	dataCampagnesAgent.forEach(all => {
-		$campagnesConnectees.forEach(connected => {
-			// Si les Queue correspondent 
-			if (all.Queue === connected.Queue) {
-				if (!queueGroups[all.Queue]) {
-					queueGroups[all.Queue] = [];
-				}
-				// Ajoute CampaignId uniquement s'il n'est pas déjà présent dans la liste
-				if (!queueGroups[all.Queue].includes(all.CampaignId)) {
-					queueGroups[all.Queue].push(all.CampaignId);
-				}
-			}
-		});
-	});
-	// Combine tous les CampaignId dans un seul tableau
-	$idsAgentCampaigns = Object.values(queueGroups).flat();
-	console.warn("Campagne(s) entrante(s) connectée(s) : ", $idsAgentCampaigns);
-	if ($idsAgentCampaigns.length === 0) {
-		setTimeout(() => matchingCampaigns(), 600);
-	}
-	return $idsAgentCampaigns;
+ // Affichage des compteurs FR et NL
+ el.setAttribute('data-count', `FR: ${$frCallsCount}`);
+ el.classList.remove('notify');
+ el.offsetWidth = el.offsetWidth;
+ el.classList.add('notify');
+ el.classList.add('show-count');
+
+ elRelances.setAttribute('data-count', `NL: ${$nlCallsCount}`);
+ elRelances.classList.remove('notify');
+ elRelances.offsetWidth = elRelances.offsetWidth;
+ elRelances.classList.add('notify');
+ elRelances.classList.add('show-count');
+
+ // Mise à jour du contenu du slide
+ const notificationDetail = window.top.document.getElementById("slide-container");
+
+ if (notificationDetail) {
+  notificationDetail.innerHTML = '';
+
+  // Créer deux cellules pour FR et NL
+  let slideContent = "<div id='notification-all-cells'>";
+
+  // Cellule pour FR
+  slideContent += ` <div class="notification-cell" style="cursor: pointer; position: relative;"><div class="tooltip" style="display: inline-block;"><div class="icon-custom"><span>Lost Calls: FR</span></div><span class="tooltiptext">Appels perdus pour la France</span></div><span class="icon-valeur">${$frCallsCount}</span></div>`;
+
+  // Cellule pour NL
+  slideContent += ` <div class="notification-cell" style="cursor: pointer; position: relative;"><div class="tooltip" style="display: inline-block;"><div class="icon-custom"><span>Lost Calls: NL</span></div><span class="tooltiptext">Appels perdus pour les Pays-Bas</span></div><span class="icon-valeur">${$nlCallsCount}</span></div>`;
+
+  slideContent += "</div>";
+  notificationDetail.innerHTML = slideContent;
+ }
+
+ // Mise à jour de la table de détails
+ updateDetailTable();
 }
 
-// Fonction qui attends que variable soit remplie
-// async function waitForDataNotif() {
-// 	console.table('waitForDataNotif', $dataNotif);
-// 	while (typeof $dataNotif === 'undefined' || $dataNotif === '' || (Array.isArray($dataNotif) && $dataNotif.length === 0)) {
-// 		await new Promise(resolve => setTimeout(resolve, 100));
-// 	}
-// 	console.log(`La variable est chargée : \n${$dataNotif}`);
-// }
-// ---------------------------------------------------------------------------------------------------------------------------------
+ ;
 
-// Injection du code HTML des notifications dans Workspace pour TESTER
-function appendNotifHtml() {
-	GetAgentFrame().$(".BodyWorkspace").append(`
-	 <div class="wrap-notif-appel">
-		<div class="container-notif">
-		<div id="call-container">
-		<span id="call">S.A.</span>
-		</div>
-		</div>
-	</div>
-	`);
-};
+// Fonction pour formater la date au format dd/mm/yyyy à HHhMM
+function formatDate(dateString) {
+ const date = new Date(dateString);
+ if (isNaN(date.getTime())) return "Date invalide";
 
+ const day = String(date.getDate()).padStart(2, '0');
+ const month = String(date.getMonth() + 1).padStart(2, '0');
+ const year = date.getFullYear();
+ const hours = String(date.getHours()).padStart(2, '0');
+ const minutes = String(date.getMinutes()).padStart(2, '0');
 
-
-// Функция для создания нативного уведомления Windows
-function createWindowsNotification(callId, telClient, campagne) {
-	const iconUrl = 'https://images.centrerelationsclients.com/Clochette/Notif_Entrant/icon-incall.png';
-	const title = `Appel entrant Hèrmes, campagne : "${campagne}"`;
-
-	// Создаем уникальный тег для каждого уведомления, используя timestamp
-	const uniqueTag = `call-${callId}-${Date.now()}`;
-
-	const options = {
-		body: `${telClient} vous appelle.`,
-		icon: iconUrl,
-		tag: uniqueTag, // Уникальный тег для каждого уведомления
-		requireInteraction: true,
-		silent: true,
-		timestamp: Date.now(), // Добавляем timestamp для сортировки
-		data: { // Добавляем дополнительные данные
-			callId: callId,
-			createdAt: Date.now()
-		}
-	};
-
-	// Создаем уведомление
-	const notification = new Notification(title, options);
-
-	// Добавляем обработчик закрытия для логирования
-	notification.onclose = function () {
-		console.warn(`Уведомление о звонке ${callId} было закрыто. Это могло произойти из-за явного закрытия или автоматически.`);
-
-		// Удаляем уведомление из списка отображаемых
-		if ($displayedNotifications[callId]) {
-			delete $displayedNotifications[callId];
-		}
-	};
-
-	// Упрощенный обработчик клика на уведомление
-	notification.onclick = function () {
-		// Отмечаем, что на уведомление кликнули
-		if ($displayedNotifications[callId]) {
-			$displayedNotifications[callId].clicked = true;
-		}
-
-		try {
-			// Воспроизводим короткий звук для активации окна
-			const audio = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==");
-			audio.play().catch(e => { });
-
-			// Закрываем уведомление
-			this.close();
-			console.log(`Уведомление о звонке ${callId} закрыто после клика пользователя.`);
-
-			// Фокусируем окно
-			window.top.focus();
-
-			// Отправляем сообщение для активации окна
-			window.top.postMessage('FOCUS_WINDOW', '*');
-
-			console.log('Пользователь нажал на уведомление о звонке: ' + callId);
-		} catch (error) {
-			console.error('Ошибка при попытке активировать окно:', error);
-		}
-	};
-
-	// Сохраняем уведомление в списке отображаемых
-	$displayedNotifications[callId] = {
-		element: notification,
-		telClient: telClient,
-		campagne: campagne,
-		clicked: false,
-		createdAt: Date.now(),
-		tag: uniqueTag // Сохраняем тег для отслеживания
-	};
-
-	// Проверяем количество активных уведомлений
-	const activeNotifications = Object.keys($displayedNotifications).length;
-	console.log(`Активных уведомлений: ${activeNotifications}`);
-
-	// Воспроизводим звук
-	//const audio = new Audio('https://github.com/SergeMiro/stock_files/raw/refs/heads/main/notif_appel_court.mp3');
-	const audio = new Audio('https://images.centrerelationsclients.com/Clochette/Notif_Entrant/rington_for_workspace_hermes.mp3');
-	audio.volume = 0.7;
-	audio.play().catch(error => {
-		console.error('Ошибка воспроизведения звука:', error);
-	});
+ return `${day}/${month}/${year} à ${hours}h${minutes}`;
 }
 
-// Declaration de la fonction pour vider les popups
-function removePopups() {
-	// Закрываем все нативные уведомления
-	Object.values($displayedNotifications).forEach(notifData => {
-		if (notifData.element && typeof notifData.element.close === 'function') {
-			notifData.element.close();
-		}
-	});
+// Fonction pour mettre à jour la table de détails
+function updateDetailTable() {
+ const tableBody = window.top.document.querySelector('.detail-table tbody');
+ if (!tableBody) return;
 
-	// Очищаем объект отслеживания отображаемых уведомлений
-	$displayedNotifications = {};
+ tableBody.innerHTML = '';
 
-	// Сбрасываем счетчик попапов
-	popupCounter = 0;
+ if (Array.isArray($lostCallsData) && $lostCallsData.length > 0) {
+  $lostCallsData.forEach(call => {
+   const row = document.createElement('tr');
+
+   row.innerHTML = ` <td>${call.Country || ''}</td> <td>${call.Indice || ''}</td> <td>${call.PhoneCalling || ''}</td> <td>${formatDate(call.LostCallTime || '')}</td> `;
+   tableBody.appendChild(row);
+  }
+
+  );
+ }
+
+ else {
+  // Si pas de données, afficher une ligne vide
+  tableBody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Aucune donnée disponible</td></tr>';
+ }
 }
 
-// +++++++++++++++++ Déclaration de la fonction qui affiche la notification
-window.top["inject_notif"] = () => {
-	// Извлекаем текущие идентификаторы звонков из $dataNotif
-	let currentCallIds = $dataNotif.map(row => row[0]); // Предполагается, что Id находится в первом столбце
+// Fonction pour basculer l'affichage des détails
+function toggleDetailView() {
+ const detailSlide = window.top.document.getElementById('notification-detail-slide');
+ const detailTable = window.top.document.getElementById('detail-table-container');
 
-	// Находим новые звонки (которые есть в текущих данных, но не было в предыдущих)
-	let newCallIds = currentCallIds.filter(id => !previousCallIds.includes(id));
+ if (detailSlide.classList.contains('expanded')) {
+  // Réduire
+  detailSlide.classList.remove('expanded');
+  detailTable.style.display = 'none';
+ }
 
-	// Находим завершенные звонки (которые были в предыдущих данных, но нет в текущих)
-	let endedCallIds = previousCallIds.filter(id => !currentCallIds.includes(id));
-
-	console.log(`Обработка данных: текущие звонки=${currentCallIds.length}, новые звонки=${newCallIds.length}, завершенные звонки=${endedCallIds.length}`);
-
-	// Обрабатываем новые звонки
-	newCallIds.forEach(id => {
-		let row = $dataNotif.find(row => row[0] === id);
-		const telClientEntrant = row[6]; // Телефон клиента (индекс 6)
-		const nomCampagneEntrante = row[7]; // Название кампании (индекс 7)
-		showPopup(id, telClientEntrant, nomCampagneEntrante);
-		console.log(`Показан попап для нового звонка ${id}`);
-
-		// Добавляем Id в список обработанных звонков
-		if (!$processedCallIds.includes(id)) {
-			$processedCallIds.push(id);
-		}
-	});
-
-	// Обрабатываем завершенные звонки - просто закрываем уведомления
-	endedCallIds.forEach(id => {
-		let notifData = $displayedNotifications[id];
-		if (notifData && notifData.element && typeof notifData.element.close === 'function') {
-			// Закрываем уведомление без отображения нового
-			console.log(`Закрываем уведомление для завершенного звонка ${id}. Время жизни: ${(new Date().getTime() - (notifData.createdAt || 0)) / 1000} сек.`);
-			notifData.element.close();
-
-			// Удаляем из списка отображаемых уведомлений
-			delete $displayedNotifications[id];
-		}
-	});
-
-	// Обновляем previousCallIds для следующего цикла
-	previousCallIds = currentCallIds.slice();
-
-	// Очищаем $dataNotif для следующего цикла
-	$dataNotif = [];
-
-	console.warn('Notification mise à jour');
+ else {
+  // Agrandir
+  detailSlide.classList.add('expanded');
+  detailTable.style.display = 'block';
+  updateDetailTable();
+ }
 }
 
-// Déclaration de la fonction qui compte les appels entrants
-function callsCounter() {
-	const spanPanQueue = parent.document.getElementById('Pan_Queue');
-	if (!spanPanQueue) {
-		console.log('SPAN avec l\'id "Pan_Queue" n\'est pas trouvé.');
-		setTimeout(callsCounter, 2000);
-		return;
-	}
-	const tdElements = spanPanQueue.getElementsByTagName('td');
-	if (tdElements.length === 0) {
-		console.log('Pas d\'éléments <td> dans le <span id="Pan_Queue">');
-		setTimeout(callsCounter, 2000);
-		return;
-	}
-	if (tdElements.length >= 3) {
-		$inCallsCounter = parseInt(tdElements[0].querySelector('div').textContent.trim(), 10);
+// ----------------------------------------------------------------------------------------------------------------------------------------
+// ----------------------------------------------------------------------------------------------------------------------------------------
 
-		// Проверяем изменился ли счетчик в любую сторону
-		if ($inCallsCounter !== $newInCallsCounter) {
-			$newInCallsCounter = $inCallsCounter;
-			main().then(() => {
-				console.warn('Code after MAIN function');
-			}).catch(error => {
-				console.error('Error in main:', error);
-			});
-		} else {
-			$newInCallsCounter = $inCallsCounter;
-			//console.warn('Aucun changement détecté');
-		}
-	} else {
-		console.log('Pas d\'éléments <td> suffisants dans le <span id="Pan_Queue">');
-	}
-	setTimeout(callsCounter, 100);
+const notificationElement = window.top.document.getElementById('notification_id');
+const notificationRelances = window.top.document.getElementById('notification_id_relances');
+let isPopupPinned = false;
+
+// Fonction pour changer le background de la notification
+function setNotificationBackground(active) {
+ if (notificationElement) {
+  notificationElement.style.backgroundImage = active ? "linear-gradient(#a72f75, #e9d6c0)" : "linear-gradient(#432a63, #b1824b)";
+  notificationElement.style.transition = "background-image 0.5s ease-in-out";
+ }
+
+ if (notificationRelances) {
+  notificationRelances.style.backgroundImage = active ? "linear-gradient(#a72f75, #e9d6c0)" : "linear-gradient(#432a63, #b1824b)";
+  notificationRelances.style.transition = "background-image 0.5s ease-in-out";
+ }
 }
 
+// Fonctions pour afficher/cacher le slide
+function toggleSlide(event) {
+ event.stopPropagation();
+ const notificationDetail = window.top.document.getElementById('notification-detail-slide');
 
-// ===================================================================================================================
+ if (notificationDetail) {
+  isPopupPinned = !isPopupPinned;
 
-// Declaration de la fonction qui surveille les appels entrants
-function monitorInCalls() {
-	const agentLink = GetAgentLink();
-	if (agentLink && agentLink.Telephony && agentLink.Telephony.Sessions && agentLink.Telephony.Sessions._data[0]) {
-		const sessionData = agentLink.Telephony.Sessions._data[0];
-		// Récupérons les valeurs actuelles de CampaignId et de ContactNumber
-		const currentCampaignId = sessionData.CampaignId ? sessionData.CampaignId.split('-')[1] || sessionData.CampaignId : null;
-		const currentContactNumber = sessionData.ContactNumber ? sessionData.ContactNumber.split('-')[1] || sessionData.ContactNumber : null;
-		// Vérifions si les données ont changé
-		if (
-			(!$inCallsAnswered[0] || $inCallsAnswered[0].CampaignId !== currentCampaignId) ||
-			(!$inCallsAnswered[0] || $inCallsAnswered[0].ContactNumber !== currentContactNumber)
-		) {
-			// Vidons le tableau et ajoutons les nouvelles données
-			$inCallsAnswered.length = 0;
-			$inCallsAnswered.push({
-				CampaignId: currentCampaignId,
-				ContactNumber: currentContactNumber
-			});
-			console.warn("Données mises à jour $inCallsAnswered:", $inCallsAnswered);
-		}
-	} else {
-		console.warn("Données de session indisponibles, nouvelle vérification...");
-	}
-	setTimeout(monitorInCalls, 1000);
+  if (isPopupPinned) {
+   notificationDetail.style.right = "0px";
+   setNotificationBackground(true);
+  }
+
+  else {
+   notificationDetail.style.right = "-540px";
+   setNotificationBackground(false);
+  }
+ }
 }
 
+function showSlide() {
+ if (!isPopupPinned) {
+  const notificationDetail = window.top.document.getElementById('notification-detail-slide');
 
+  if (notificationDetail) {
+   notificationDetail.style.right = "0px";
+   setNotificationBackground(true);
+  }
+ }
+}
 
+function hideSlide() {
+ if (!isPopupPinned) {
+  const notificationDetail = window.top.document.getElementById('notification-detail-slide');
 
-// Declaration de la fonction principale
+  if (notificationDetail) {
+   notificationDetail.style.right = "-540px";
+   setNotificationBackground(false);
+  }
+ }
+}
+
+if (notificationElement && notificationRelances) {
+ // Affichage ou fixation au clic
+ notificationElement.addEventListener("click", toggleSlide);
+ notificationRelances.addEventListener("click", toggleSlide);
+
+ // Listener ESCAPE ESC
+ GetAgentFrame().document.addEventListener("keydown", function (e) {
+  if ((e.key === "Escape" || e.code === "Escape" || e.keyCode === 27) && isPopupPinned) {
+   isPopupPinned = false;
+   hideSlide();
+  }
+ }
+
+ );
+}
+
+// Fonction pour formater le temps restant pour le prochain rafraîchissement
+function formatTimeRemaining(milliseconds) {
+ const totalSeconds = Math.ceil(milliseconds / 1000);
+ const minutes = Math.floor(totalSeconds / 60);
+ const seconds = totalSeconds % 60;
+
+ return `$ {
+      minutes
+   }
+
+   :$ {
+      seconds < 10 ? '0'+seconds: seconds
+   }
+
+   `;
+}
+
+// Fonction pour mettre à jour le compteur
+function updateCountdown() {
+ if (!nextUpdateTime) return;
+ const now = new Date();
+ const timeRemaining = nextUpdateTime - now;
+
+ if (timeRemaining <= 0) {
+  return;
+ }
+
+ // Le code de mise à jour visuelle du compteur a été supprimé car l'élément n'existe plus
+}
+
+// Fonction pour démarrer le compteur
+function startCountdownTimer() {
+ if (updateCountdownInterval) {
+  clearInterval(updateCountdownInterval);
+ }
+
+ nextUpdateTime = new Date(new Date().getTime() + UPDATE_INTERVAL_MS);
+ updateCountdownInterval = setInterval(updateCountdown, 1000);
+}
+
+// Fonction de préparation des données et de l'interface
+async function dataAndUi() {
+ await reqSelectLostCalls();
+ window.top.inject_data();
+
+ // Redémarrer le minuteur
+ startCountdownTimer();
+}
+
+// Fonction pour initialiser l'interface et charger les données
+async function initializeUI() {
+ // Récupération de l'IP du Cloud
+ cloud = checkURL();
+
+ // Chargement du CSS personnalisé
+ loadCssFileInWorkspace('fimainfo_notifications.css');
+
+ // Injection du HTML de la clochette
+ appendClochetteInHtml();
+
+ // Configuration des événements après un court délai
+ setTimeout(() => {
+  // Configurer l'événement de clic pour le bouton détails
+  const detailButton = window.top.document.getElementById('detail-button');
+
+  if (detailButton) {
+   detailButton.addEventListener('click', function (e) {
+    e.stopPropagation();
+    toggleDetailView();
+   }
+
+   );
+  }
+
+  // Fermer la vue détaillée quand on clique ailleurs
+  window.top.document.addEventListener('click', function (e) {
+   const detailSlide = window.top.document.getElementById('notification-detail-slide');
+   const detailButton = window.top.document.getElementById('detail-button');
+   const detailTable = window.top.document.getElementById('detail-table-container');
+
+   if (detailSlide && detailSlide.classList.contains('expanded')) {
+    if (!detailSlide.contains(e.target) || (detailSlide.contains(e.target) && !detailTable.contains(e.target) && e.target !== detailButton)) {
+     detailSlide.classList.remove('expanded');
+     detailTable.style.display = 'none';
+    }
+   }
+  }
+
+  );
+
+  // Configurer le bouton toggle
+  configureToggleButton();
+ }
+
+  , 1000);
+}
+
+// Fonction de préparation
+async function prepare() {
+ agentInfo = await findAgentData();
+ await recupDb(customerId);
+ await reqSelectAgentData();
+}
+
+// Fonction principale
 async function main() {
-	console.warn('DEBUT MAIN');
-	await reqSelectDataCall();
-	console.table('DATA NOTIF', $dataNotif);
-	window.top.inject_notif();
+ await initializeUI();
+ await prepare();
+ await dataAndUi();
 
-	// Очищаем старые идентификаторы звонков, если прошло слишком много времени
-	// (например, удаляем записи старше 1 часа)
-	const oneHourAgo = new Date().getTime() - 60 * 60 * 1000;
-	if ($currentCallData.length > 0) {
-		// Очистка старых записей (например, каждые 100 запросов или по времени)
-		if ($processedCallIds.length > 100) {
-			console.warn('Очистка списка обработанных звонков (более 100 записей)');
-			// Оставляем только последние 50 записей
-			$processedCallIds = $processedCallIds.slice(-50);
-		}
-	}
+ // Mise à jour toutes les 90 secondes
+ setInterval(async () => {
+  await dataAndUi();
+ }
+
+  , UPDATE_INTERVAL_MS);
 }
 
-validateAndCreateView();
-
-initializePopupContainer();
-appendNotifHtml();
-// Appeler la fonction pour charger le fichier CSS personnalisé dans le DOM de Hermes.net
-loadCssFileInWorkspace('fimainfo_notifications.css');
-monitorInCalls();
-
-// Appel des fonctions pour récupérer les campagnes et les comparer
-checkCampaigns($campaignType);
-checkCampaignsConnected($queuesType);
-
-callsCounter();
-
-
-
-//-----------------------------------------------------------------------------------------
-//------------------ A DECOMMENTER POUR TESTER LA NOTIFICATION D'APPEL --------------------
-//  Bouton "SIMULATION D'APPEL" pour le TEST d'affichage de la notification dans Workspace
-
-const callButton = window.top.document.getElementById('call');
-if (callButton) {
-	callButton.addEventListener('click', function () {
-		console.warn('Bouton "SIMULATION D\'APPEL" cliqué : ');
-		// Action qui recupere le TEL du client + la CAMPAGNE ENTRANTE dans la base
-		//window._g.wscript.ExecuteAction("req-notification", "", false);
-		main(); // Appeler la fonction qui affiche la notification
-		console.warn('Popup affiché');
-	});
-} else {
-	console.error("Bouton de Test n'a pa été trouvé");
-}
-
-//-----------------------------------------------------------------------------------------
-//-----------------------------------------------------------------------------------------
-
-// Init container popups
-function initializePopupContainer() {
-	if (!popupContainer) {
-		popupContainer = window.top.document.createElement('div');
-		popupContainer.className = 'popup-container';
-		popupContainer.style.display = 'none'; // Изначально скрываем контейнер
-		window.top.document.body.appendChild(popupContainer);
-	}
-}
-
-
-// Affichage du container des popup
-function affichePopupContainer(isVisible) {
-	if (popupContainer) {
-		popupContainer.style.display = isVisible ? 'block' : 'none';
-	}
-}
-
-
-// Fonction pour créer une notification native Windows
-function showPopup(callId, telClient, campagne) {
-	// Проверяем поддержку уведомлений браузером
-	if (!("Notification" in window)) {
-		console.error("Этот браузер не поддерживает уведомления рабочего стола");
-		return;
-	}
-
-	// Проверяем разрешение на отправку уведомлений
-	if (Notification.permission === "granted") {
-		// Если разрешено, создаем уведомление
-		createWindowsNotification(callId, telClient, campagne);
-	} else if (Notification.permission !== "denied") {
-		// Если разрешение еще не запрашивалось, запрашиваем его
-		Notification.requestPermission().then(permission => {
-			if (permission === "granted") {
-				createWindowsNotification(callId, telClient, campagne);
-			}
-		});
-	}
-}
-
+main();
