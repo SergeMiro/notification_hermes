@@ -46,7 +46,7 @@
    scroll-behavior: smooth;
 }
 
-/* Styles for scroll */
+/* Styles pour la barre de défilement */
 .popup-container::-webkit-scrollbar {
    width: 4px;
    border-radius: 50px;
@@ -70,7 +70,7 @@
    transition: background-color 0.8s, border-radius 0.8s;
 }
 
-/* Styles for the custom pop-up */
+/* Styles pour le pop-up personnalisé */
 .custom-popup {
    display: flex;
    justify-content: space-evenly;
@@ -315,7 +315,7 @@
    width: auto;
 }
 
-/* Убираем все transition у контейнера */
+/* On désactive toutes les transitions du conteneur */
 #call-container {
    display: flex;
    position: fixed;
@@ -324,9 +324,9 @@
    z-index: 1000;
    cursor: pointer;
    transition: none !important;
-   /* Отключаем любые анимации */
+   /* Désactivation de toutes les animations */
    will-change: top, opacity;
-   /* Подсказка браузеру: будем менять top и opacity */
+   /* Indiquer au navigateur que nous allons modifier top et opacity */
 }
 
 
@@ -714,7 +714,7 @@
 
 .confirm-dialog-content p {
    font-size: 16px;
-   /* Увеличен на 2px */
+   /* Augmenté de 2px */
 }
 
 .confirm-dialog-buttons {
@@ -1704,14 +1704,14 @@
    transition: background 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
    position: relative;
    padding-left: 22px;
-   /* Место для иконки */
+   /* Espace réservé pour l'icône */
    vertical-align: middle;
    font-size: 12px;
    backface-visibility: hidden;
-   /* Фиксит некоторые проблемы анимации */
+   /* Corrige certains problèmes d'animation */
    -webkit-backface-visibility: hidden;
    will-change: transform, box-shadow;
-   /* Оптимизация производительности анимации */
+   /* Optimisation des performances de l'animation */
 }
 
 .countdown-timer::before {
@@ -1882,7 +1882,7 @@
    animation-delay: 1.9s;
 }
 
-/* Scroll styles for .content-notification */
+/* Styles de défilement pour .content-notification */
 .content-notification {
    overflow-y: auto;
    scroll-behavior: smooth;
@@ -2265,35 +2265,35 @@
    padding: 20px;
 }
 
-/* Заголовок */
+/* Titre */
 .topic span {
    font-size: 24px;
    font-weight: 600;
    color: #d1c4e9;
 }
 
-/* Блок с настройками */
+/* Bloc des paramètres */
 .block-settings {
    margin-bottom: 20px;
 }
 
-/* Ряд для выравнивания */
+/* Ligne d'alignement */
 .row-settings {
    display: flex;
    flex-wrap: wrap;
    gap: 20px;
-   /* Расстояние между элементами */
+   /* Espacement entre les éléments */
    justify-content: space-between;
 }
 
-/* Колонка */
+/* Colonne */
 .column-settings {
    flex: 1 1 30%;
    min-width: 130px;
    padding: 5px;
 }
 
-/* Контейнер для чекбокса */
+/* Conteneur pour la case à cocher */
 .checkbox-wrapper {
    background-color: #3c3450b9;
    border-radius: 7px;
@@ -2317,7 +2317,7 @@
    display: none;
 }
 
-/* Стили SVG контейнера */
+/* Styles du conteneur SVG */
 .container-check {
    display: flex;
    justify-content: center;
@@ -2349,7 +2349,7 @@
    stroke-dashoffset: -262.2723388671875;
 }
 
-/* Текст в чекбоксе */
+/* Texte dans la case à cocher */
 .checkbox-wrapper span {
    flex-grow: 1;
    color: #ffffff;
@@ -2358,7 +2358,7 @@
 
 .container-check input:checked~span {
    color: #d1c4e9;
-   /* Цвет текста при активном состоянии */
+   /* Couleur du texte lorsqu'il est actif */
 }
 
 
@@ -2427,7 +2427,7 @@ button.campaign-toggle-button.online {
 /* =================================================================== */
 
 
-/* Add Animation */
+/* Ajout d'animation */
 
 @-webkit-keyframes anim-container-notify {
 
@@ -2793,7 +2793,7 @@ button.campaign-toggle-button.online {
    margin: 0 auto;
 }
 
-/* Responsive */
+/* Adaptatif (responsive) */
 @keyframes spin {
    0% {
       transform: rotate(0deg);
