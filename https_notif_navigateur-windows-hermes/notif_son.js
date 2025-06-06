@@ -9,17 +9,18 @@
 // Gestion du contexte
 async function initAuto() {
 	// A modifier la variable "contexte" en fonction de besoin du client
-	let contexte = 'notif_son'; // 'clochette' ou 'notif_son' ou 'clochette+notif_son'
+	let contexte = 'clochette_notif_son'; // 'clochette' ou 'notif_son' ou 'clochette+notif_son'
 
 	if (contexte === 'clochette') {
+		//console.warn('=== Init Clochette ===')
 		await initClochette();
 	}
 	if (contexte === 'notif_son') {
-		console.warn('=== NOTIF NOTIF ===')
+		//console.warn('=== Init Notif_son ===')
 		await initNotifSon();
 	}
-	if (contexte === 'clochette+notif_son') {
-		// fnu pour lancer la clochette et la notif_son
+	if (contexte === 'clochette_notif_son') {
+		//console.warn('=== Init Clochette + Notif_son ===')
 		await initClochette();
 		await initNotifSon();
 	}

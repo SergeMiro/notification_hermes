@@ -1,6 +1,6 @@
 -- CREER TOUT DANS LA BASE : "HN_FIMAINFO" DU CLOUD CONCERNE
 
--- Création de la Vue SQL pour les appels entrants
+-- Création de la Vue SQL pour les appels entrants qui re
 USE [HN_FIMAINFO];
 GO
 
